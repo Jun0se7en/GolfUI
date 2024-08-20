@@ -40,13 +40,44 @@ class ExtendedKalmanFilter:
         new_state = [new_velocity, new_steering, new_x, new_y, new_heading]
         return new_state, P_next
 
-    def update_state(self, state, P, measurement, R):
+    def update_state_gps(self, state, P, measurement, R):
+        z = np.array(measurement, dtype=np.float32)
+        H = np.array([
+            [0, 0, 0, 0, 0],  # Measurement function for velocity
+            [0, 0, 0, 0, 0],
+            [0, 0, 1, 0, 0],  # Measurement function for x
+            [0, 0, 0, 1, 0],  # Measurement function for y
+            [0, 0, 0, 0, 0]   # Measurement function for heading
+        ], dtype=np.float32)
+        
+        # Calculate the measurement prediction
+        z_pred = np.dot(H, state)
+        
+        # Calculate the measurement residual
+        y_k = z - z_pred
+        
+        # Calculate the residual covariance
+        S = np.dot(H, np.dot(P, H.T)) + R
+        
+        # Calculate the Kalman gain
+        K = np.dot(P, np.dot(H.T, np.linalg.inv(S)))
+        
+        # Update the state estimate
+        state_update = state + np.dot(K, y_k)
+        
+        # Update the covariance estimate
+        I = np.eye(len(P), dtype=np.float32)
+        P_update = np.dot(I - np.dot(K, H), P)
+        
+        return state_update, P_update
+
+    def update_state_vel_head(self, state, P, measurement, R):
         z = np.array(measurement, dtype=np.float32)
         H = np.array([
             [1, 0, 0, 0, 0],  # Measurement function for velocity
             [0, 0, 0, 0, 0],
-            [0, 0, 1, 0, 0],  # Measurement function for x
-            [0, 0, 0, 1, 0],  # Measurement function for y
+            [0, 0, 0, 0, 0],  # Measurement function for x
+            [0, 0, 0, 0, 0],  # Measurement function for y
             [0, 0, 0, 0, 1]   # Measurement function for heading
         ], dtype=np.float32)
         

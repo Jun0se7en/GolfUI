@@ -42,17 +42,40 @@ class threadMap(QThread):
         self.connect_flag = False
         self.gps_latitude = 0.0
         self.gps_longitude = 0.0
+        self.prev_gps_latitude = 0.0
+        self.prev_gps_longtitude = 0.0
         self.heading = 0.0
         self.acc = 0.0
         self.steering_rate = 0.0
         self.queueList = queueList
         self.initial_flag = False
-        self.wheelbase = 2.5
+        self.wheelbase = 2.1
         self.length_rear = 1.0
         self.dt = 1
-        self.P_ekf = np.eye(5) * 0.1
-        self.Q_ekf = np.eye(5) * 0.01
-        self.R_ekf = np.eye(5) * 0.1
+        # self.P_ekf = np.eye(5) * 0.1
+        self.P_ekf = np.array([
+            [0.54, 0, 0, 0, 0],
+            [0, 0.1, 0, 0, 0],
+            [0, 0, 0.5, 0, 0],
+            [0, 0, 0, 0.5, 0],
+            [0, 0, 0, 0, 0.1],
+        ])
+        # self.Q_ekf = np.eye(5) * 0.01
+        self.Q_ekf = np.array([
+            [0.54, 0, 0, 0, 0],
+            [0, 0.1, 0, 0, 0],
+            [0, 0, 0, 0, 0],
+            [0, 0, 0, 0, 0],
+            [0, 0, 0, 0, 0],
+        ])
+        # self.R_ekf = np.eye(5) * 0.1
+        self.R_ekf = np.array([
+            [0.54, 0, 0, 0, 0],
+            [0, 0, 0, 0, 0],
+            [0, 0, 0.5, 0, 0],
+            [0, 0, 0, 0.5, 0],
+            [0, 0, 0, 0, 0.1],
+        ])
         self.ekf = ExtendedKalmanFilter(self.wheelbase, self.length_rear, self.dt, self.P_ekf, self.Q_ekf, self.R_ekf)
         # Constants
         self.a = 6378137.0  # semi-major axis, meters
@@ -178,25 +201,23 @@ class threadMap(QThread):
             try:
                 response = pickle.loads(response_data)
                 # response = json.load(response)
-                # print(f'Received response: {response}')
                 print(f'Received response: {response}')
                 self.gps_latitude = response["0"]
                 self.gps_longitude = response["1"]
                 # print('GPS lat: ', self.gps_latitude, "GPS long: ", self.gps_longitude)
-                self.speed = response["2"]*3.6
+                self.speed = response["2"]
                 self.steer = response["3"]
-                self.speed = int(self.speed + 0.5)
-                self.steer = int(self.steer + 0.5)
                 self.heading = response["4"]
                 self.acc = response["5"]
                 self.steering_rate = response["6"]
                 # self.speed = random.randint(0,8)*3.6
                 # self.steer = random.randint(-25, 25)
                 # print('Speed: ', self.speed, 'Steer: ', self.steer)
-                self.update_speed_func(self.speed)
+                self.update_speed_func(self.speed*3.6)
                 self.update_steer_func(self.steer)
                 if not self.initial_flag:
-                    if self.gps_latitude != 0.0 and self.gps_longitude != 0.0:
+                    if int(self.gps_latitude) != 0 and int(self.gps_longitude) != 0:
+                        print(f'Received response: {response}')
                         self.marker = folium.Marker(location=[self.gps_latitude, self.gps_longitude])
                         self.marker.add_to(self.map)
                         self.gps_coordinates.append((self.gps_latitude, self.gps_longitude))
@@ -222,40 +243,59 @@ class threadMap(QThread):
                         # self.measurement = np.array([self.speed, self.steer, ned[0], ned[1], self.heading])
                         # self.current_state, self.current_covariance = self.ekf.update_state(self.predicted_state, self.predicted_P, self.measurement, self.R_ekf)
                         self.initial_flag = True
+                        self.prev_gps_latitude = self.gps_latitude
+                        self.prev_gps_longtitude = self.gps_longtitude
                 else:
-                    if self.speed != 0 :
+                    if self.speed != 0:
                         self.predicted_state, self.predicted_P = self.ekf.prediction_state(self.current_state, [self.acc, self.steering_rate], self.current_covariance, self.Q_ekf)
-                    if self.gps_latitude != 0.0 and self.gps_longitude != 0.0:
+                    if int(self.gps_latitude) != 0 and int(self.gps_longitude) != 0:
+                        print(f'Received response: {response}')
                         self.gps_coordinates.append((self.gps_latitude, self.gps_longitude))
                         folium.PolyLine(locations=self.gps_coordinates, color='blue').add_to(self.map)
 
                         # self.current_covariance = self.P_ekf
-                        if self.speed != 0:
+                        if self.speed != 0 and self.prev_gps_latitude != self.gps_latitude and self.prev_gps_longtitude != self.gps_longtitude:
                             lat = self.gps_latitude
                             lon = self.gps_longitude
                             alt = 0.0
                             target_lla = [lat, lon, alt]
                             ned = self.lla_to_ned(target_lla, self.ref_lla)
                             self.measurement = np.array([self.speed, self.steer, ned[0], ned[1], self.heading])
-                            self.current_state, self.current_covariance = self.ekf.update_state(self.predicted_state, self.predicted_P, self.measurement, self.R_ekf)
+                            self.current_state, self.current_covariance = self.ekf.update_state_gps(self.predicted_state, self.predicted_P, self.measurement, self.R_ekf)
                             ned = [self.current_state[2], self.current_state[3], 0]
                             lla = self.ned_to_lla(ned, self.ref_lla)
                             self.ekf_coordinates.append((lla[0], lla[1]))
                             folium.PolyLine(locations=self.ekf_coordinates, color='red').add_to(self.map)
                             # time.sleep(0.2)
+                            self.prev_gps_latitude = self.gps_latitude
+                            self.prev_gps_longtitude = self.gps_longtitude
+                        elif self.speed != 0:
+                            self.measurement = np.array([self.speed, self.steer, 0, 0, self.heading])
+                            self.current_state, self.current_covariance = self.ekf.update_state_vel_head(self.predicted_state, self.predicted_P, self.measurement, self.R_ekf)
+
                         # Save map data to data object
                         data = io.BytesIO()
                         self.map.save(data, close_file=False)
 
                         # Emit the map_updated signal with the updated map data
                         self.MapUpdate.emit(data.getvalue())
-                        time.sleep(1)
 
                     # # Wait for 1 second before updating the next coordinate
                     # time.sleep(1)
                 # time.sleep(1)
             except:
-                pass
+                self.update_speed_func(self.speed*3.6)
+                self.update_steer_func(self.steer)
+                folium.PolyLine(locations=self.gps_coordinates, color='blue').add_to(self.map)
+                folium.PolyLine(locations=self.ekf_coordinates, color='red').add_to(self.map)
+                # Save map data to data object
+                data = io.BytesIO()
+                self.map.save(data, close_file=False)
+
+                # Emit the map_updated signal with the updated map data
+                self.MapUpdate.emit(data.getvalue())
+            
+            time.sleep(1)
         self.socket.close()
         self.terminate()
 

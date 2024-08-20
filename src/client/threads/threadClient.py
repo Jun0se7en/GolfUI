@@ -60,76 +60,83 @@ class threadClient(QThread):
         payload_size = struct.calcsize("Q")       
 
         while self.ThreadActive:
-            while len(data) < payload_size:
-                packet = self.client_socket.recv(4*1024)
-                if not packet: break
-                data+=packet
-            packed_msg_size = data[:payload_size]
-            data = data[payload_size:]
-            msg_size = struct.unpack("Q",packed_msg_size)[0]
-            
-            while len(data) < msg_size:
-                data += self.client_socket.recv(4*1024) 
-            frame_data = data[:msg_size]
-            data  = data[msg_size:]
-            frame = pickle.loads(frame_data)
-            # cv2.imshow("RECEIVING VIDEO",frame)
-            image_data = base64.b64decode(frame)
-            img = np.frombuffer(image_data, dtype=np.uint8)
-            frame = cv2.imdecode(img, cv2.IMREAD_COLOR)
-            # key = cv2.waitKey(1) & 0xFF
-            # if key == ord('q'):
-            #     break
+            try:
+                while len(data) < payload_size:
+                    packet = self.client_socket.recv(4*1024)
+                    if not packet: break
+                    data+=packet
+                packed_msg_size = data[:payload_size]
+                data = data[payload_size:]
+                msg_size = struct.unpack("Q",packed_msg_size)[0]
+                
+                while len(data) < msg_size:
+                    data += self.client_socket.recv(4*1024) 
+                frame_data = data[:msg_size]
+                data  = data[msg_size:]
+                frame = pickle.loads(frame_data)
+                # cv2.imshow("RECEIVING VIDEO",frame)
+                image_data = base64.b64decode(frame)
+                img = np.frombuffer(image_data, dtype=np.uint8)
+                frame = cv2.imdecode(img, cv2.IMREAD_COLOR)
+                frame = cv2.resize(frame, (640, 480))
+                # key = cv2.waitKey(1) & 0xFF
+                # if key == ord('q'):
+                #     break
 
-            # Get the frame height, width and channels.
-            height, width, channels = frame.shape
-            # Calculate the number of bytes per line.
-            bytes_per_line = width * channels
-            Image = cv2.cvtColor(frame, cv2.COLOR_BGR2RGB)
-            # try:
-            #     os.mkdir(f'../data/{self.port}/')
-            # except:
-            #     pass
-            if self.count % 5 == 0:
-                # cv2.imwrite(f'../data/{self.port}/{self.frame}.png', frame)
-                self.frame += 1
-            self.count += 1
-            if not self.segment:
-                if self.calibrate.value:
-                    undistorted_img = cv2.undistort(Image.copy(), self.camera_matrix, self.dist_coeffs, None, self.new_camera_matrix)
-                    # Cắt ảnh để bỏ các phần đen sau khi hiệu chỉnh
-                    x, y, w, h = self.roi
-                    undistorted_img = undistorted_img[y:y+h, x:x+w]
-                    undistorted_img = cv2.resize(undistorted_img, (self.width, self.height))
-                    height, width, channels = undistorted_img.shape
-                    # Calculate the number of bytes per line.
-                    bytes_per_line = width * channels
-                    # print(undistorted_img.shape)
-                    Image = undistorted_img
-                if self.birdview.value:
-                    h, w, c = Image.shape
-                    src = np.float32([
-                        [w*0.2, h*0.2], # top-left
-                        [w-w*0.2, h*0.2], # top-right
-                        [w, h], # bottom-right
-                        [0, h], # bottom-left
-                    ])
-                    dst = np.array([[0, 0], [480, 0], [300, 400], [180, 400]], np.float32)
-                    M = cv2.getPerspectiveTransform(src, dst)
-                    width, height, channels = 480, 360, 3
-                    bytes_per_line = width * channels
-                    Image = cv2.warpPerspective(Image.copy(), M, (480, 360))
-            # FlippedImage = cv2.flip(Image, 1)
-            # Convert the image to Qt format.
-            qt_rgb_image = QImage(Image.data, width, height, bytes_per_line, QImage.Format_RGB888)
-            # Scale the image.
-            # NOTE: consider removing the flag Qt.KeepAspectRatio as it will crash Python on older Windows machines
-            # If this is the case, call instead: qt_rgb_image.scaled(1280, 720) 
-            qt_rgb_image_scaled = qt_rgb_image.scaled(320, 240, Qt.KeepAspectRatio)  # 720p
-            # qt_rgb_image_scaled = qt_rgb_image.scaled(1920, 1080, Qt.KeepAspectRatio)
-            # Emit this signal to notify that a new image or frame is available.
-            self.ImageUpdate.emit(qt_rgb_image_scaled)
-            
+                # Get the frame height, width and channels.
+                height, width, channels = frame.shape
+                # Calculate the number of bytes per line.
+                bytes_per_line = width * channels
+                Image = cv2.cvtColor(frame, cv2.COLOR_BGR2RGB)
+                # try:
+                #     os.mkdir(f'../data/{self.port}/')
+                # except:
+                #     pass
+                if self.count % 5 == 0:
+                    # cv2.imwrite(f'../data/{self.port}/{self.frame}.png', frame)
+                    self.frame += 1
+                self.count += 1
+                if not self.segment:
+                    if self.calibrate.value:
+                        undistorted_img = cv2.undistort(Image.copy(), self.camera_matrix, self.dist_coeffs, None, self.new_camera_matrix)
+                        # Cắt ảnh để bỏ các phần đen sau khi hiệu chỉnh
+                        x, y, w, h = self.roi
+                        undistorted_img = undistorted_img[y:y+h, x:x+w]
+                        undistorted_img = cv2.resize(undistorted_img, (self.width, self.height))
+                        # height, width, channels = undistorted_img.shape
+                        # # Calculate the number of bytes per line.
+                        # bytes_per_line = width * channels
+                        # print(undistorted_img.shape)
+                        Image = undistorted_img
+                    if self.birdview.value:
+                        h, w, c = Image.shape
+                        src = np.float32([
+                            [w*0.2, h*0.2], # top-left
+                            [w-w*0.2, h*0.2], # top-right
+                            [w, h], # bottom-right
+                            [0, h], # bottom-left
+                        ])
+                        dst = np.array([[0, 0], [480, 0], [300, 400], [180, 400]], np.float32)
+                        M = cv2.getPerspectiveTransform(src, dst)
+                        # width, height, channels = 480, 360, 3
+                        # bytes_per_line = width * channels
+                        Image = cv2.warpPerspective(Image.copy(), M, (480, 360))
+                # FlippedImage = cv2.flip(Image, 1)
+                # Convert the image to Qt format.
+                Image = cv2.resize(Image, (640, 640))
+                height, width, channels = 640, 640, 3
+                # Calculate the number of bytes per line.
+                bytes_per_line = width * channels
+                qt_rgb_image = QImage(Image.data, width, height, bytes_per_line, QImage.Format_RGB888)
+                # Scale the image.
+                # NOTE: consider removing the flag Qt.KeepAspectRatio as it will crash Python on older Windows machines
+                # If this is the case, call instead: qt_rgb_image.scaled(1280, 720) 
+                qt_rgb_image_scaled = qt_rgb_image.scaled(320, 240, Qt.KeepAspectRatio)  # 720p
+                # qt_rgb_image_scaled = qt_rgb_image.scaled(1920, 1080, Qt.KeepAspectRatio)
+                # Emit this signal to notify that a new image or frame is available.
+                self.ImageUpdate.emit(qt_rgb_image_scaled)
+            except:
+                pass
         # When everything done, release the socket
         self.client_socket.close()
         # Tells the thread's event loop to exit with return code 0 (success).
